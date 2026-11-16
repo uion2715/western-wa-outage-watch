@@ -1,0 +1,157 @@
+{
+  "description": "STATIC SCHEMA EXAMPLE, NOT LIVE DATA. Replace timestamps and values using an authorized data adapter.",
+  "counties": [
+    {
+      "fips": "53009",
+      "customers_out": 0,
+      "observed_at": "2026-11-10T20:00:00Z",
+      "source": "Example provider - not live",
+      "source_url": "https://example.com",
+      "recovery_allowed": true
+    },
+    {
+      "fips": "53011",
+      "customers_out": 0,
+      "observed_at": "2026-11-10T20:00:00Z",
+      "source": "Example provider - not live",
+      "source_url": "https://example.com",
+      "recovery_allowed": true
+    },
+    {
+      "fips": "53015",
+      "customers_out": 0,
+      "observed_at": "2026-11-10T20:00:00Z",
+      "source": "Example provider - not live",
+      "source_url": "https://example.com",
+      "recovery_allowed": true
+    },
+    {
+      "fips": "53027",
+      "customers_out": 0,
+      "observed_at": "2026-11-10T20:00:00Z",
+      "source": "Example provider - not live",
+      "source_url": "https://example.com",
+      "recovery_allowed": true
+    },
+    {
+      "fips": "53029",
+      "customers_out": 0,
+      "observed_at": "2026-11-10T20:00:00Z",
+      "source": "Example provider - not live",
+      "source_url": "https://example.com",
+      "recovery_allowed": true
+    },
+    {
+      "fips": "53031",
+      "customers_out": 0,
+      "observed_at": "2026-11-10T20:00:00Z",
+      "source": "Example provider - not live",
+      "source_url": "https://example.com",
+      "recovery_allowed": true
+    },
+    {
+      "fips": "53033",
+      "customers_out": 6000,
+      "observed_at": "2026-11-10T20:00:00Z",
+      "source": "Example provider - not live",
+      "source_url": "https://example.com",
+      "recovery_allowed": true
+    },
+    {
+      "fips": "53035",
+      "customers_out": 0,
+      "observed_at": "2026-11-10T20:00:00Z",
+      "source": "Example provider - not live",
+      "source_url": "https://example.com",
+      "recovery_allowed": true
+    },
+    {
+      "fips": "53041",
+      "customers_out": 0,
+      "observed_at": "2026-11-10T20:00:00Z",
+      "source": "Example provider - not live",
+      "source_url": "https://example.com",
+      "recovery_allowed": true
+    },
+    {
+      "fips": "53045",
+      "customers_out": 0,
+      "observed_at": "2026-11-10T20:00:00Z",
+      "source": "Example provider - not live",
+      "source_url": "https://example.com",
+      "recovery_allowed": true
+    },
+    {
+      "fips": "53049",
+      "customers_out": 0,
+      "observed_at": "2026-11-10T20:00:00Z",
+      "source": "Example provider - not live",
+      "source_url": "https://example.com",
+      "recovery_allowed": true
+    },
+    {
+      "fips": "53053",
+      "customers_out": 0,
+      "observed_at": "2026-11-10T20:00:00Z",
+      "source": "Example provider - not live",
+      "source_url": "https://example.com",
+      "recovery_allowed": true
+    },
+    {
+      "fips": "53055",
+      "customers_out": 0,
+      "observed_at": "2026-11-10T20:00:00Z",
+      "source": "Example provider - not live",
+      "source_url": "https://example.com",
+      "recovery_allowed": true
+    },
+    {
+      "fips": "53057",
+      "customers_out": 0,
+      "observed_at": "2026-11-10T20:00:00Z",
+      "source": "Example provider - not live",
+      "source_url": "https://example.com",
+      "recovery_allowed": true
+    },
+    {
+      "fips": "53059",
+      "customers_out": 0,
+      "observed_at": "2026-11-10T20:00:00Z",
+      "source": "Example provider - not live",
+      "source_url": "https://example.com",
+      "recovery_allowed": true
+    },
+    {
+      "fips": "53061",
+      "customers_out": 6000,
+      "observed_at": "2026-11-10T20:00:00Z",
+      "source": "Example provider - not live",
+      "source_url": "https://example.com",
+      "recovery_allowed": true
+    },
+    {
+      "fips": "53067",
+      "customers_out": 0,
+      "observed_at": "2026-11-10T20:00:00Z",
+      "source": "Example provider - not live",
+      "source_url": "https://example.com",
+      "recovery_allowed": true
+    },
+    {
+      "fips": "53069",
+      "customers_out": 0,
+      "observed_at": "2026-11-10T20:00:00Z",
+      "source": "Example provider - not live",
+      "source_url": "https://example.com",
+      "recovery_allowed": true
+    },
+    {
+      "fips": "53073",
+      "customers_out": 0,
+      "observed_at": "2026-11-10T20:00:00Z",
+      "source": "Example provider - not live",
+      "source_url": "https://example.com",
+      "recovery_allowed": true
+    }
+  ]
+}

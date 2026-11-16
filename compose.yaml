@@ -1,0 +1,22 @@
+services:
+  outage-bot:
+    build: .
+    restart: unless-stopped
+    env_file: .env
+    volumes:
+      - outage-state:/app/data
+    read_only: true
+    tmpfs:
+      - /tmp
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    healthcheck:
+      test: ["CMD", "python", "bot.py", "--health"]
+      interval: 60s
+      timeout: 10s
+      retries: 3
+      start_period: 180s
+volumes:
+  outage-state:
