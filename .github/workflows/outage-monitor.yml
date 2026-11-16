@@ -1,1 +1,94 @@
 
+name: Western Washington outage monitor
+
+"on":
+  schedule:
+    - cron: '3-58/5 * * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: western-wa-outage-monitor
+  cancel-in-progress: false
+
+jobs:
+  poll:
+    runs-on: ubuntu-latest
+    timeout-minutes: 4
+    env:
+      DRY_RUN: 'true'
+      ACK_COUNTY_PROXY: 'true'
+      OUTAGE_SOURCE: massoutage
+      ALERT_SCOPE: regional
+      ALERT_MODE: balanced
+      THRESHOLD: '10000'
+      HOLD_SECONDS: '900'
+      POLL_SECONDS: '300'
+      MAX_DATA_AGE_SECONDS: '1800'
+      MAX_SAMPLE_GAP_SECONDS: '900'
+      REGIONAL_MAX_SKEW_SECONDS: '900'
+      MAX_POSTS_PER_HOUR: '2'
+      ESCALATION_ABSOLUTE: '10000'
+      ESCALATION_COOLDOWN_SECONDS: '1800'
+      SEND_RECOVERY: 'false'
+      RESET_BELOW: '5000'
+      RESET_SECONDS: '1800'
+      STATE_FILE: data/state.github-dry-run.db
+      STATE_BRANCH_FILE: state.dry-run.db
+      PYTHONUNBUFFERED: '1'
+
+    steps:
+      - name: Check out bot code
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: '3.12'
+
+      - name: Restore persistent alert state
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$(dirname "$STATE_FILE")"
+          if git ls-remote --exit-code origin refs/heads/bot-state >/dev/null 2>&1; then
+            git fetch --no-tags origin bot-state
+            if git show "FETCH_HEAD:${STATE_BRANCH_FILE}" > "$STATE_FILE" 2>/dev/null; then
+              echo "Restored alert state from bot-state branch."
+            else
+              echo "State branch exists but has no ${STATE_BRANCH_FILE}; starting a new state file."
+              rm -f "$STATE_FILE"
+            fi
+          else
+            echo "No bot-state branch yet; this is the first monitoring run."
+          fi
+
+      - name: Poll MassOutage and process one observation
+        env:
+          MASSOUTAGE_API_KEY: ${{ secrets.MASSOUTAGE_API_KEY }}
+          SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}
+          SLACK_CHANNEL_ID: ${{ secrets.SLACK_CHANNEL_ID }}
+        run: python bot.py --once
+
+      - name: Save alert state for the next scheduled run
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ ! -f "$STATE_FILE" ]]; then
+            echo "Expected state database was not created: $STATE_FILE" >&2
+            exit 1
+          fi
+          cp "$STATE_FILE" "$RUNNER_TEMP/outage-state.db"
+          git switch --orphan "state-export-${GITHUB_RUN_ID}"
+          git clean -fdx
+          cp "$RUNNER_TEMP/outage-state.db" "$STATE_BRANCH_FILE"
+          git add -f "$STATE_BRANCH_FILE"
+          git -c user.name='github-actions[bot]' \
+              -c user.email='41898282+github-actions[bot]@users.noreply.github.com' \
+              commit -m "Update outage monitor state"
+          git push --force origin "HEAD:bot-state"
+
