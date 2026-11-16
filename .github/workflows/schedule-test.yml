@@ -1,0 +1,18 @@
+
+name: GitHub scheduler diagnostic
+
+"on":
+  schedule:
+    - cron: '2,7,12,17,22,27,32,37,42,47,52,57 * * * *'
+  workflow_dispatch:
+
+permissions: {}
+
+jobs:
+  scheduler-test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Confirm scheduled execution
+        run: |
+          echo "GitHub scheduled execution received."
+          date -u
