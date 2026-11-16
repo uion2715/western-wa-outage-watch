@@ -15,7 +15,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 4
     env:
-      DRY_RUN: 'true'
+      DRY_RUN: 'false'
       ACK_COUNTY_PROXY: 'true'
       OUTAGE_SOURCE: massoutage
       ALERT_SCOPE: regional
@@ -32,8 +32,8 @@ jobs:
       SEND_RECOVERY: 'false'
       RESET_BELOW: '5000'
       RESET_SECONDS: '1800'
-      STATE_FILE: data/state.github-dry-run.db
-      STATE_BRANCH_FILE: state.dry-run.db
+      STATE_FILE: data/state.github-live.db
+      STATE_BRANCH_FILE: state.live.db
       PYTHONUNBUFFERED: '1'
 
     steps:
