@@ -1296,9 +1296,110 @@ class Engine:
         self.store.save(self.state)
         return sent
 
+    def log_diagnostics(self, snapshots: dict[str, Snapshot], now: float,
+                        issues: list[str] | None = None) -> str:
+        """Log the regional gate and a human-readable reason for no notification."""
+        issues = issues or []
+        valid = {k: snap for k, snap in snapshots.items() if snap.valid(now, self.cfg)}
+        scoped = self.scoped(snapshots, now)
+        if self.cfg.scope == "regional":
+            region = scoped.get("region")
+            fresh_counties = sum(1 for key in self.cfg.counties if key in valid)
+            if region is None:
+                reason = "regional total unavailable (incomplete, stale, or time-skewed county data)"
+                LOG.warning(
+                    "Regional diagnostic: coverage=%d/%d; total=UNKNOWN; threshold=%s; "
+                    "opening alert=BLOCKED; reason=%s",
+                    fresh_counties, len(self.cfg.counties), f">{self.cfg.threshold:,}", reason)
+                if issues:
+                    LOG.info("Regional diagnostic source issues: %s", "; ".join(issues))
+                return reason
+
+            area = self.state["areas"].get("region", {})
+            count = region.count
+            high_since = area.get("high_since")
+            last_ts = area.get("last_ts")
+            duration = max(0, int(last_ts - high_since)) if high_since is not None and last_ts is not None else 0
+            above = count > self.cfg.threshold
+            qualified = bool(area.get("valid") and above and high_since is not None
+                             and last_ts is not None and duration > self.cfg.hold_seconds)
+            active = [e for e in self.state["events"].values()
+                      if e.get("key") == "region" and e.get("active")]
+            opening = [e for e in active if not e.get("notified") and self.current(e, now)]
+            now_posts = [t for t in self.state["posts"] if now - t < 3600]
+            cooldown_remaining = max(0, int(self.state.get("next_send_at", 0) - now))
+            growth_wait = []
+            growth_ready = []
+            for event in active:
+                if not event.get("notified") or not self.current(event, now):
+                    continue
+                increase = event["count"] - event.get("last_notified_count", 0)
+                elapsed = now - event.get("last_notified_at", 0)
+                if increase >= self.cfg.escalation_absolute and elapsed >= self.cfg.escalation_seconds:
+                    growth_ready.append(event)
+                elif increase >= self.cfg.escalation_absolute:
+                    growth_wait.append(max(0, int(self.cfg.escalation_seconds - elapsed)))
+
+            if not above:
+                reason = f"combined count {count:,} is not above {self.cfg.threshold:,}"
+            elif not qualified:
+                remaining = max(0, self.cfg.hold_seconds + 1 - duration)
+                reason = f"threshold hold not yet exceeded; observed {duration}s, needs >{self.cfg.hold_seconds}s (about {remaining}s more)"
+            elif opening:
+                if cooldown_remaining:
+                    reason = f"opening alert eligible but delivery backoff has {cooldown_remaining}s remaining"
+                elif len(now_posts) >= self.cfg.max_posts_hour:
+                    reason = f"opening alert eligible but hourly cap reached ({len(now_posts)}/{self.cfg.max_posts_hour})"
+                else:
+                    reason = "opening alert eligible; delivery will be attempted"
+            elif growth_ready:
+                if cooldown_remaining:
+                    reason = f"growth update eligible but delivery backoff has {cooldown_remaining}s remaining"
+                elif len(now_posts) >= self.cfg.max_posts_hour:
+                    reason = f"growth update eligible but hourly cap reached ({len(now_posts)}/{self.cfg.max_posts_hour})"
+                else:
+                    reason = "growth update eligible; delivery will be attempted"
+            elif growth_wait:
+                reason = f"growth increase reached +{self.cfg.escalation_absolute:,}; 30-minute cooldown has {min(growth_wait)}s remaining"
+            elif active and any(e.get("notified") for e in active):
+                last_count = max(e.get("last_notified_count", 0) for e in active)
+                delta = count - last_count
+                reason = (f"existing episode already notified; increase since last notification is {delta:+,}, "
+                          f"needs +{self.cfg.escalation_absolute:,}")
+            else:
+                reason = "no active qualified notification event"
+
+            LOG.info(
+                "Regional diagnostic: coverage=%d/%d; total=%s; threshold=>%s; "
+                "above_threshold=%s; duration_above_threshold=%ds; required=>%ds; "
+                "qualified=%s; active_events=%d; hourly_posts=%d/%d; provider_degraded=%s",
+                fresh_counties, len(self.cfg.counties), f"{count:,}", f"{self.cfg.threshold:,}",
+                "yes" if above else "no", duration, self.cfg.hold_seconds,
+                "yes" if qualified else "no", len(active), len(now_posts),
+                self.cfg.max_posts_hour,
+                "yes" if any(not snap.recovery_allowed for snap in snapshots.values()) else "no")
+            LOG.info("Notification decision: %s", reason)
+            if issues:
+                LOG.info("Regional diagnostic source issues: %s", "; ".join(issues))
+            return reason
+
+        # County mode diagnostic (kept for compatibility with older configurations).
+        LOG.info("County diagnostic: valid=%d/%d; active_events=%d",
+                 len(valid), len(self.cfg.counties),
+                 sum(1 for e in self.state["events"].values() if e.get("active")))
+        return "county-mode diagnostic logged"
+
     def tick(self, snapshots: dict[str, Snapshot], now: float) -> list[str]:
         self.observe(snapshots, now)
-        return self.deliver(now)
+        self.log_diagnostics(snapshots, now)
+        sent = self.deliver(now)
+        if sent:
+            mode = "DRY_RUN" if isinstance(self.sender, ConsoleSender) else "SLACK"
+            LOG.info("Notification action completed; mode=%s; event_types=%s",
+                     mode, ",".join(sent))
+        else:
+            LOG.info("Notification action: no message sent on this poll; see the decision reason above")
+        return sent
 
 
 def demo() -> None:
@@ -1421,7 +1522,15 @@ def main() -> int:
                     ok = len(valid) == len(cfg.counties)
                 return 0 if ok else 1
             assert engine is not None
-            engine.tick(snapshots, now)
+            engine.observe(snapshots, now)
+            if args.once:
+                engine.log_diagnostics(snapshots, now, issues)
+            sent = engine.deliver(now)
+            if sent:
+                LOG.info("Notification action completed; mode=%s; event_types=%s",
+                         "DRY_RUN" if dry_run else "SLACK", ",".join(sent))
+            else:
+                LOG.info("Notification action: no message sent on this poll; see the decision reason above")
             health_path.parent.mkdir(parents=True, exist_ok=True)
             health = {"checked_at": now, "usable_counties": len(valid), "source_issues": len(issues),
                       "regional_usable": bool(engine.scoped(snapshots, now)),

@@ -866,3 +866,60 @@ class SlackOneOffTestTests(unittest.TestCase):
             message = sender_type.return_value.send.call_args.args[0]
             self.assertIn("Slack delivery test", message)
             self.assertIn("not an outage alert", message)
+
+class DiagnosticLoggingTests(unittest.TestCase):
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory()
+        self.cfg = Config(scope="regional", source_kind="massoutage",
+                          counties={"53033": "King", "53061": "Snohomish"})
+        self.sender = RecordingSender()
+        self.store = StateStore(str(Path(self.temp.name) / "diagnostic.db"))
+        self.engine = Engine(self.cfg, self.store, self.sender)
+
+    def tearDown(self):
+        self.store.close()
+        self.temp.cleanup()
+
+    def sample(self, minute, king=6000, snohomish=3000, recovery=True):
+        observed = BASE + minute * 60
+        return {
+            "53033": Snapshot("53033", "King County", king, observed,
+                              "MassOutage", "https://massoutage.com/washington/king", recovery),
+            "53061": Snapshot("53061", "Snohomish County", snohomish, observed,
+                              "MassOutage", "https://massoutage.com/washington/snohomish", recovery),
+        }
+
+    def test_diagnostic_logs_combined_total_and_below_threshold_reason(self):
+        samples = self.sample(0, king=6000, snohomish=3000)
+        self.engine.observe(samples, BASE)
+        with self.assertLogs("outage-bot", level="INFO") as captured:
+            reason = self.engine.log_diagnostics(samples, BASE)
+        joined = "\\n".join(captured.output)
+        self.assertIn("coverage=2/2", joined)
+        self.assertIn("total=9,000", joined)
+        self.assertIn("above_threshold=no", joined)
+        self.assertIn("not above 10,000", reason)
+
+    def test_diagnostic_logs_duration_before_threshold_qualifies(self):
+        first = self.sample(0, king=9000, snohomish=2000)
+        self.engine.observe(first, BASE)
+        later = self.sample(10, king=9000, snohomish=2000)
+        self.engine.observe(later, BASE + 600)
+        with self.assertLogs("outage-bot", level="INFO") as captured:
+            reason = self.engine.log_diagnostics(later, BASE + 600)
+        joined = "\\n".join(captured.output)
+        self.assertIn("total=11,000", joined)
+        self.assertIn("duration_above_threshold=600s", joined)
+        self.assertIn("qualified=no", joined)
+        self.assertIn("needs >900s", reason)
+
+    def test_diagnostic_explains_incomplete_county_coverage(self):
+        partial = self.sample(0)
+        partial.pop("53061")
+        self.engine.observe(partial, BASE)
+        with self.assertLogs("outage-bot", level="WARNING") as captured:
+            reason = self.engine.log_diagnostics(partial, BASE)
+        self.assertIn("coverage=1/2", "\\n".join(captured.output))
+        self.assertIn("total=UNKNOWN", "\\n".join(captured.output))
+        self.assertIn("BLOCKED", "\\n".join(captured.output))
+        self.assertIn("unavailable", reason)
