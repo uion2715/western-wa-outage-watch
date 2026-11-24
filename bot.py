@@ -190,11 +190,18 @@ class Snapshot:
     source: str
     url: str
     recovery_allowed: bool = True
+    # The time used to validate the age of the underlying source data can be
+    # older than the rollup poll time. Keep it separate from observed_at,
+    # which is the sample time used by the duration engine.
+    freshness_at: float | None = None
 
     def valid(self, now: float, cfg: Config) -> bool:
+        freshness = self.observed_at if self.freshness_at is None else self.freshness_at
         return (isinstance(self.count, int) and not isinstance(self.count, bool)
                 and self.count >= 0 and math.isfinite(self.observed_at)
-                and -60 <= now - self.observed_at <= cfg.max_age)
+                and math.isfinite(freshness)
+                and -60 <= now - freshness <= cfg.max_age
+                and self.observed_at - now <= 60)
 
 
 class RemoteError(RuntimeError):
@@ -263,21 +270,26 @@ class MassOutageProvider:
         if live.get("status") == "delayed":
             raise ValueError("Provider marked the data delayed")
         if count:
-            # Use oldest underlying fetch time, not page generation time.
-            # updated_at is the rollup poll time; as_of is the oldest
-            # contributing source fetch. Use the older timestamp for safety.
+            # MassOutage distinguishes two timestamps:
+            #   updated_at = time this county rollup was polled/generated
+            #   as_of     = oldest underlying utility-feed fetch contributing
+            # Use updated_at as the sample time for duration tracking. Validate
+            # freshness against the older timestamp so carried-forward source
+            # data is still rejected when it exceeds the configured age.
             updated = parse_time(data["updated_at"])
             as_of = parse_time(data["as_of"])
-            stamp = min(updated, as_of)
+            stamp = updated
+            freshness_stamp = min(updated, as_of)
         else:
             # Null timestamps are common at zero; require explicit poll health.
             if live.get("status") != "ok":
                 raise ValueError("Zero count without explicit fresh-poll evidence")
             stamp = parse_time(live["last_poll_ts"])
+            freshness_stamp = stamp
         return Snapshot(fips, COUNTIES[fips] + " County", count, stamp,
                         "MassOutage", "https://massoutage.com/washington/" +
                         COUNTIES[fips].lower().replace(" ", "-"),
-                        recovery_allowed=not feed_degraded)
+                        recovery_allowed=not feed_degraded, freshness_at=freshness_stamp)
 
     def fetch(self) -> tuple[dict[str, Snapshot], list[str]]:
         result: dict[str, Snapshot] = {}

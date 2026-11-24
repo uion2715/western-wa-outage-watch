@@ -639,9 +639,12 @@ class AdapterTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "MASSOUTAGE_API_KEY"):
                 MassOutageProvider(Config(source_kind="massoutage"))
 
-    def test_uses_oldest_source_not_page_time(self):
+    def test_rollup_poll_time_advances_sample_but_oldest_source_controls_freshness(self):
         snap = MassOutageProvider.decode("53033", self.payload())
-        self.assertEqual(snap.observed_at, BASE)
+        self.assertEqual(snap.observed_at, BASE + 600)
+        self.assertEqual(snap.freshness_at, BASE)
+        self.assertTrue(snap.valid(BASE + 900, Config(max_age=1200)))
+        self.assertFalse(snap.valid(BASE + 1801, Config(max_age=1200)))
 
     def test_zero_needs_explicit_poll_evidence(self):
         p = self.payload(0)
@@ -650,6 +653,34 @@ class AdapterTests(unittest.TestCase):
         del p["meta"]
         with self.assertRaises(ValueError):
             MassOutageProvider.decode("53033", p)
+
+    def test_massoutage_rollup_updates_advance_regional_hold_timer(self):
+        cfg = Config(scope="regional", counties={"53033": "King", "53061": "Snohomish"},
+                     source_kind="massoutage", max_age=1800, regional_max_skew=300)
+        temp = tempfile.TemporaryDirectory()
+        store = StateStore(str(Path(temp.name) / "state.db"))
+        sender = RecordingSender()
+        engine = Engine(cfg, store, sender)
+
+        def snapshots(minute):
+            updated = iso(BASE + minute * 60)
+            as_of = iso(BASE - 300)  # Oldest contributing fetch is carried forward.
+            rows = {}
+            for fips, count in (("53033", 12001), ("53061", 0)):
+                payload = {"data": {"fips": fips, "customers_out": count,
+                                    "updated_at": updated, "as_of": as_of},
+                           "meta": {"live": {"status": "ok", "last_poll_ts": updated}}}
+                rows[fips] = MassOutageProvider.decode(fips, payload)
+            return rows
+
+        try:
+            for minute in (0, 10, 20):
+                engine.tick(snapshots(minute), BASE + minute * 60)
+            self.assertEqual(len(sender.messages), 1)
+            self.assertIn("12,001", sender.messages[0][0])
+        finally:
+            store.close()
+            temp.cleanup()
 
     def test_delayed_provider_rejected(self):
         p = self.payload()
